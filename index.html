@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Night Shift Ticket</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      height: 100%;
+      width: 100%;
+      background: #000;
+      color: #fff;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: manipulation;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100dvh;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+
+    /* ========== ZOOM + TICKET ========== */
+    .stage {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .zoom-wrap {
+      position: relative;
+      transform-origin: center center;
+      transition: transform 0.2s ease-out;
+      will-change: transform;
+    }
+
+    /* Outer wrapper that handles portrait rotation.
+       Keeping the 90° rotate HERE means the ticket's own
+       rotateY flip stays a true horizontal (left↔right) flip. */
+    .orient {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .scene {
+      perspective: 1600px;
+    }
+
+    .ticket {
+      position: relative;
+      width: min(94vw, 920px);
+      aspect-ratio: 2550 / 825;
+      transform-style: preserve-3d;
+      transition: transform 0.9s cubic-bezier(0.4, 0.0, 0.2, 1);
+      will-change: transform;
+    }
+
+    /* Pure horizontal flip (left ↔ right) */
+    .ticket.flipped {
+      transform: rotateY(180deg);
+    }
+
+    .face {
+      position: absolute;
+      inset: 0;
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow:
+        0 10px 40px rgba(0,0,0,0.85),
+        0 0 0 2px rgba(255, 180, 0, 0.3);
+    }
+
+    .face img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain; /* never crop */
+      display: block;
+      pointer-events: none;
+      user-select: none;
+      background: #000;
+    }
+
+    .face.back {
+      transform: rotateY(180deg);
+      background: #000;
+    }
+
+    /* Interactive checkboxes overlaid on back (page 3 circles) */
+    .checks-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .check-hit {
+      position: absolute;
+      width: 9%;
+      height: 22%;
+      border-radius: 50%;
+      border: 2.5px solid transparent;
+      background: transparent;
+      pointer-events: auto;
+      cursor: pointer;
+      transition: background 0.15s, box-shadow 0.15s, border-color 0.15s;
+    }
+
+    .check-hit.checked {
+      background: rgba(255, 204, 0, 0.85);
+      border-color: #ffcc00;
+      box-shadow: 0 0 14px rgba(255, 200, 0, 0.7);
+    }
+
+    .check-hit.checked::after {
+      content: "✓";
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #1a0f00;
+      font-size: clamp(14px, 4.5vw, 28px);
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    /* positions from PDF circle analysis (percent of ticket) */
+    .check-hit:nth-child(1) { left: 8.7%;  top: 21%; }
+    .check-hit:nth-child(2) { left: 31.6%; top: 21.5%; }
+    .check-hit:nth-child(3) { left: 49.0%; top: 26%; }
+    .check-hit:nth-child(4) { left: 19.5%; top: 74%; }
+    .check-hit:nth-child(5) { left: 41.5%; top: 71%; }
+    .check-hit:nth-child(6) { left: 9.8%;  top: 75.5%; }
+    .check-hit:nth-child(7) { left: 62%;   top: 48%; }
+
+    /* Portrait – rotate the OUTER orient wrapper so the ticket
+       itself only ever does rotateY (horizontal flip) */
+    @media (orientation: portrait) {
+      .orient {
+        transform: rotate(90deg);
+      }
+      .ticket {
+        width: min(88dvh, 94vw * 3.09);
+        height: min(94vw, 88dvh / 3.09);
+        aspect-ratio: auto;
+      }
+    }
+
+    @media (orientation: landscape) {
+      .ticket {
+        max-height: 78dvh;
+        width: auto;
+        height: auto;
+        max-width: min(94vw, 920px);
+      }
+    }
+
+    /* ========== CONTROLS ========== */
+    .controls {
+      position: fixed;
+      bottom: max(16px, env(safe-area-inset-bottom));
+      left: 0;
+      right: 0;
+      display: flex;
+      gap: 18px;
+      justify-content: center;
+      align-items: center;
+      z-index: 50;
+      pointer-events: none;
+    }
+
+    .controls > * {
+      pointer-events: auto;
+    }
+
+    .icon-btn {
+      appearance: none;
+      border: none;
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: linear-gradient(180deg, #ffcc00 0%, #e6a800 100%);
+      color: #1a0f00;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 4px 0 #b37a00, 0 6px 18px rgba(0,0,0,0.45);
+      transition: transform 0.12s, box-shadow 0.12s;
+      touch-action: manipulation;
+    }
+
+    .icon-btn:active {
+      transform: translateY(3px);
+      box-shadow: 0 1px 0 #b37a00, 0 2px 8px rgba(0,0,0,0.4);
+    }
+
+    .icon-btn svg {
+      width: 26px;
+      height: 26px;
+      fill: currentColor;
+    }
+
+    .icon-btn.secondary {
+      background: linear-gradient(180deg, #2a2a2a 0%, #111 100%);
+      color: #ffcc00;
+      box-shadow: 0 4px 0 #000, 0 6px 18px rgba(0,0,0,0.5);
+      border: 1px solid #444;
+    }
+
+    .icon-btn.secondary:active {
+      box-shadow: 0 1px 0 #000, 0 2px 8px rgba(0,0,0,0.5);
+    }
+
+    .zoom-label {
+      font-size: 12px;
+      color: #888;
+      min-width: 42px;
+      text-align: center;
+      user-select: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div class="zoom-wrap" id="zoomWrap">
+      <div class="orient">
+        <div class="scene">
+          <div class="ticket" id="ticket">
+            <!-- FRONT -->
+            <div class="face front">
+              <img src="ticket1.webp" alt="Front of ticket" draggable="false" />
+            </div>
+
+            <!-- BACK = checklist page with interactive circles -->
+            <div class="face back">
+              <img src="ticket3.webp" alt="Back of ticket – checklist" draggable="false" />
+              <div class="checks-overlay" id="checksOverlay">
+                <button type="button" class="check-hit" data-i="0" aria-label="Location 1"></button>
+                <button type="button" class="check-hit" data-i="1" aria-label="Location 2"></button>
+                <button type="button" class="check-hit" data-i="2" aria-label="Location 3"></button>
+                <button type="button" class="check-hit" data-i="3" aria-label="Location 4"></button>
+                <button type="button" class="check-hit" data-i="4" aria-label="Location 5"></button>
+                <button type="button" class="check-hit" data-i="5" aria-label="Location 6"></button>
+                <button type="button" class="check-hit" data-i="6" aria-label="Location 7"></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="icon-btn secondary" id="zoomOutBtn" type="button" aria-label="Zoom out">
+      <svg viewBox="0 0 24 24"><path d="M19 13H5v-2h14v2z"/></svg>
+    </button>
+
+    <span class="zoom-label" id="zoomLabel">100%</span>
+
+    <button class="icon-btn secondary" id="zoomInBtn" type="button" aria-label="Zoom in">
+      <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+    </button>
+
+    <button class="icon-btn" id="flipBtn" type="button" aria-label="Flip ticket">
+      <svg viewBox="0 0 24 24">
+        <path d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"/>
+      </svg>
+    </button>
+  </div>
+
+  <script>
+    const STORAGE_KEY = "fns-nightshift-checks-v2";
+    const ticket = document.getElementById("ticket");
+    const flipBtn = document.getElementById("flipBtn");
+    const zoomWrap = document.getElementById("zoomWrap");
+    const zoomInBtn = document.getElementById("zoomInBtn");
+    const zoomOutBtn = document.getElementById("zoomOutBtn");
+    const zoomLabel = document.getElementById("zoomLabel");
+
+    // ========== FLIP (button only) – always horizontal rotateY ==========
+    let isFlipped = false;
+
+    function toggleFlip() {
+      isFlipped = !isFlipped;
+      ticket.classList.toggle("flipped", isFlipped);
+    }
+
+    flipBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleFlip();
+    });
+
+    // ========== ZOOM ==========
+    let scale = 1;
+    const MIN_SCALE = 0.5;
+    const MAX_SCALE = 3;
+    const STEP = 0.25;
+
+    function applyZoom() {
+      zoomWrap.style.transform = `scale(${scale})`;
+      zoomLabel.textContent = Math.round(scale * 100) + "%";
+    }
+
+    zoomInBtn.addEventListener("click", () => {
+      scale = Math.min(MAX_SCALE, +(scale + STEP).toFixed(2));
+      applyZoom();
+    });
+
+    zoomOutBtn.addEventListener("click", () => {
+      scale = Math.max(MIN_SCALE, +(scale - STEP).toFixed(2));
+      applyZoom();
+    });
+
+    document.addEventListener("wheel", (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        if (e.deltaY < 0) {
+          scale = Math.min(MAX_SCALE, +(scale + 0.1).toFixed(2));
+        } else {
+          scale = Math.max(MIN_SCALE, +(scale - 0.1).toFixed(2));
+        }
+        applyZoom();
+      }
+    }, { passive: false });
+
+    // ========== CHECKBOXES (on back face) ==========
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return Array(7).fill(false);
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr) && arr.length === 7) return arr.map(Boolean);
+      } catch (e) {}
+      return Array(7).fill(false);
+    }
+
+    function saveState(state) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } catch (e) {}
+    }
+
+    let checked = loadState();
+
+    function renderChecks() {
+      document.querySelectorAll(".check-hit").forEach((btn) => {
+        const i = +btn.dataset.i;
+        btn.classList.toggle("checked", !!checked[i]);
+        btn.setAttribute("aria-pressed", !!checked[i]);
+      });
+    }
+
+    document.getElementById("checksOverlay").addEventListener("click", (e) => {
+      const btn = e.target.closest(".check-hit");
+      if (!btn) return;
+      e.stopPropagation();
+      const i = +btn.dataset.i;
+      checked[i] = !checked[i];
+      saveState(checked);
+      renderChecks();
+    });
+
+    renderChecks();
+
+    document.querySelectorAll("img").forEach(img => {
+      img.addEventListener("dragstart", e => e.preventDefault());
+    });
+  </script>
+</body>
+</html>
